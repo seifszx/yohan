@@ -8,7 +8,7 @@ from aiogram.utils import executor
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- الإعدادات ---
-API_TOKEN = '8779896667:AAG4HlM1SZ5ZKaLV8cBYXaZb6uyeUpfb44Q'  # ضع التوكن الخاص بك هنا
+API_TOKEN = '8779896667:AAHn8kEkgGUXttQxFJsvqB-Jc5D0OqSc-NM'  # ضع التوكن الخاص بك هنا
 BOT_NAME = "𝗬𝗢𝗛𝗔𝗡"
 
 logging.basicConfig(level=logging.INFO)
@@ -50,73 +50,60 @@ async def cmd_start(message: types.Message):
     else:
         await message.reply(f"👋 مرحباً! لبدء لعبة الغمّيضة استخدم:\n<code>/start_hide</code>")
 
-# --- أمر بدء اللعبة (يجب وضعه قبل أي معالج آخر للكولباك) ---
+# --- أمر بدء اللعبة (نسخة مبسطة بدون التحقق المسبب للمشكلة) ---
 @dp.message_handler(commands=['start_hide'])
 async def start_game(message: types.Message):
-    print(f"Received /start_hide from {message.chat.id}")  # للتصحيح
+    print(f"Received /start_hide from chat: {message.chat.id}, type: {message.chat.type}")
     
+    # التحقق من أن الأمر في مجموعة
     if message.chat.type == "private":
         return await message.reply("❌ عذراً، ابدأ اللعبة داخل مجموعة.")
     
     chat_id = message.chat.id
-    print(f"Chat ID: {chat_id}")  # للتصحيح
     
+    # التحقق من وجود لعبة نشطة
     if chat_id in db.active_games:
-        return await message.reply(f"⚠️ <b>{BOT_NAME}:</b> هناك مطاردة جارية بالفعل هنا!")
+        return await message.reply(f"⚠️ <b>{BOT_NAME}:</b> هناك لعبة جارية بالفعل هنا!")
     
-    # التحقق من صلاحيات البوت
+    # إنشاء لعبة جديدة مباشرة بدون التحقق من الصلاحيات
     try:
-        bot_member = await bot.get_chat_member(chat_id, bot.id)
-        if not bot_member.can_send_messages:
-            return await message.reply("❌ يرجى منح البوت صلاحية إرسال الرسائل أولاً!")
-    except:
-        return await message.reply("❌ تأكد من إضافة البوت إلى المجموعة أولاً!")
-
-    db.active_games[chat_id] = HideAndSeek(chat_id, message.chat.title)
-    
-    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🙋‍♂️ انضمام للاختباء", callback_data=f"join_{chat_id}"))
-    
-    await message.answer(
-        f"🎮 <b>{BOT_NAME} يستعد للمطاردة..</b>\n"
-        f"📍 المكان: <b>{message.chat.title}</b>\n"
-        f"⏱️ أمامكم 3 دقائق للاختباء.\n"
-        f"📢 اضغط الزر للانضمام!",
-        reply_markup=kb
-    )
-    
-    print(f"Game started in {chat_id}")  # للتصحيح
-
-    # حلقة التذكير
-    for _ in range(4):
-        await asyncio.sleep(40)
-        if chat_id not in db.active_games or not db.active_games[chat_id].is_join_phase:
-            break
-        try:
-            await bot.send_message(
-                chat_id, 
-                f"⏳ <b>{BOT_NAME}:</b> لا يزال هناك متسع للاختباء.. اضغط الزر!\n"
-                f"👥 عدد المختبئين حالياً: {len(db.active_games[chat_id].players)}",
-                reply_markup=kb
-            )
-        except:
-            pass
-
-    await finalize_phase(chat_id)
-
-# --- معالج للرسائل النصية في الخاص (للتأكد من أن البوت يرد) ---
-@dp.message_handler(content_types=['text'])
-async def handle_text(message: types.Message):
-    if message.chat.type == "private":
-        if message.text.startswith('/'):
-            # إذا كان الأمر غير معروف
-            if message.text not in ['/start', '/start_hide', '/help']:
-                await message.reply(
-                    f"❓ الأمر <code>{message.text}</code> غير معروف.\n\n"
-                    f"🎮 الأوامر المتاحة:\n"
-                    f"/start - الترحيب\n"
-                    f"/start_hide - بدء اللعبة (في المجموعات)\n"
-                    f"/help - المساعدة"
+        db.active_games[chat_id] = HideAndSeek(chat_id, message.chat.title)
+        
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🙋‍♂️ انضمام للاختباء", callback_data=f"join_{chat_id}"))
+        
+        await message.answer(
+            f"🎮 <b>{BOT_NAME} يستعد للمطاردة..</b>\n"
+            f"📍 المكان: <b>{message.chat.title}</b>\n"
+            f"⏱️ أمامكم 3 دقائق للاختباء.\n"
+            f"📢 اضغط الزر للانضمام!\n\n"
+            f"👥 <i>سيتم اختيار الباحث بعد انتهاء الوقت</i>",
+            reply_markup=kb
+        )
+        
+        print(f"✅ Game started successfully in {chat_id}")
+        
+        # حلقة التذكير
+        for i in range(4):
+            await asyncio.sleep(40)
+            if chat_id not in db.active_games or not db.active_games[chat_id].is_join_phase:
+                break
+            try:
+                current_players = len(db.active_games[chat_id].players)
+                await bot.send_message(
+                    chat_id, 
+                    f"⏳ <b>{BOT_NAME}:</b> متبقي {180 - (i+1)*40} ثانية للانضمام!\n"
+                    f"👥 عدد المختبئين حالياً: {current_players}\n"
+                    f"📢 اضغط الزر للانضمام!",
+                    reply_markup=kb
                 )
+            except Exception as e:
+                print(f"Error in reminder: {e}")
+        
+        await finalize_phase(chat_id)
+        
+    except Exception as e:
+        print(f"Error starting game: {e}")
+        await message.reply(f"❌ حدث خطأ في بدء اللعبة: {str(e)}")
 
 # --- أمر المساعدة ---
 @dp.message_handler(commands=['help'])
@@ -136,7 +123,20 @@ async def help_command(message: types.Message):
     
     await message.reply(help_text)
 
-# --- باقي الوظائف (كما هي بدون تغيير) ---
+# --- معالج للرسائل النصية في الخاص ---
+@dp.message_handler(content_types=['text'])
+async def handle_text(message: types.Message):
+    if message.chat.type == "private":
+        if message.text.startswith('/') and message.text not in ['/start', '/start_hide', '/help']:
+            await message.reply(
+                f"❓ الأمر <code>{message.text}</code> غير معروف.\n\n"
+                f"🎮 الأوامر المتاحة:\n"
+                f"/start - الترحيب\n"
+                f"/start_hide - بدء اللعبة (في المجموعات)\n"
+                f"/help - المساعدة"
+            )
+
+# --- باقي الوظائف ---
 async def finalize_phase(chat_id):
     game = db.active_games.get(chat_id)
     if not game or not game.is_join_phase: 
@@ -189,15 +189,21 @@ async def handle_join(callback: types.CallbackQuery):
         )
         game.players[user_id] = {"name": callback.from_user.full_name, "loc": None}
         await callback.answer("✅ تم! اختر مكانك في الخاص.", show_alert=False)
+        print(f"✅ Player {callback.from_user.full_name} joined game in {chat_id}")
     except Exception as e:
-        logging.error(f"Error in handle_join: {e}")
+        print(f"Error in handle_join: {e}")
         await callback.answer("❌ فشل! أرسل /start للبوت في الخاص أولاً.", show_alert=True)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("h_loc_"))
 async def set_loc(callback: types.CallbackQuery):
     try:
-        _, _, chat_id, loc = callback.data.split("_")
-        game = db.active_games.get(int(chat_id))
+        parts = callback.data.split("_")
+        if len(parts) != 4:
+            return await callback.answer("❌ حدث خطأ!", show_alert=True)
+            
+        _, _, chat_id, loc = parts
+        chat_id = int(chat_id)
+        game = db.active_games.get(chat_id)
         
         if game and callback.from_user.id in game.players:
             if game.players[callback.from_user.id]["loc"] is None:
@@ -205,15 +211,17 @@ async def set_loc(callback: types.CallbackQuery):
                 await callback.message.edit_text(
                     f"✅ <b>تم الاختباء بنجاح!</b>\n\n"
                     f"📍 مكانك: {loc}\n"
-                    f"🤫 لا تتحرك وانتظر بدء المطاردة!"
+                    f"🤫 لا تتحرك وانتظر بدء المطاردة!\n\n"
+                    f"⏰ سيتم إعلامك عند بدء البحث."
                 )
                 await callback.answer("🎯 تم اختيار مكانك!")
+                print(f"✅ Player chose location: {loc}")
             else:
                 await callback.answer("⚠️ لقد اخترت مكاناً بالفعل!", show_alert=True)
         else:
-            await callback.answer("❌ حدث خطأ!", show_alert=True)
+            await callback.answer("❌ حدث خطأ! حاول مجدداً.", show_alert=True)
     except Exception as e:
-        logging.error(f"Error in set_loc: {e}")
+        print(f"Error in set_loc: {e}")
         await callback.answer("❌ حدث خطأ!", show_alert=True)
 
 async def send_seeker_menu_private(seeker_id, chat_id):
@@ -236,10 +244,10 @@ async def send_seeker_menu_private(seeker_id, chat_id):
     
     await bot.send_message(
         seeker_id, 
-        f"🕵️‍♂️ <b>قائمة الأهداف:</b>\n"
+        f"🕵️‍♂️ <b>قائمة الأهداف في {game.chat_title}:</b>\n"
         f"🎯 المتبقي: {len(game.players)} لاعب\n"
         f"💪 المحاولات المتبقية: {game.attempts}\n\n"
-        f"اختر الهدف:",
+        f"اختر الهدف للبحث:",
         reply_markup=kb
     )
 
@@ -262,11 +270,11 @@ async def seeker_pick_loc(callback: types.CallbackQuery):
             kb.insert(InlineKeyboardButton(loc, callback_data=f"s_guess_{chat_id}_{target_id}_{loc}"))
         
         await callback.message.edit_text(
-            f"❓ <b>أين يختبئ {target_name}؟</b>",
+            f"❓ <b>أين يختبئ {target_name}؟</b>\n\nاختر المكان:",
             reply_markup=kb
         )
     except Exception as e:
-        logging.error(f"Error in seeker_pick_loc: {e}")
+        print(f"Error in seeker_pick_loc: {e}")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("s_guess_"))
 async def process_seeker_guess(callback: types.CallbackQuery):
@@ -287,7 +295,7 @@ async def process_seeker_guess(callback: types.CallbackQuery):
         if guessed_loc == correct_loc:
             await bot.send_message(
                 chat_id, 
-                f"🎉 <b>{BOT_NAME}:</b>\n"
+                f"🎉 <b>{BOT_NAME} يعلن:</b>\n"
                 f"🔍 أمسك الباحث بـ <b>{target_name}</b>\n"
                 f"📍 المكان: {correct_loc}"
             )
@@ -297,7 +305,7 @@ async def process_seeker_guess(callback: types.CallbackQuery):
             if not game.players:
                 await bot.send_message(
                     chat_id, 
-                    f"🏆 <b>انتهت اللعبة!</b>\n🎊 فاز الباحث!"
+                    f"🏆 <b>انتهت اللعبة!</b>\n🎊 الباحث فاز واكتشف جميع المختبئين!"
                 )
                 await callback.message.edit_text("🎉 <b>مبروك!</b>\nأمسكت بجميع المختبئين!")
                 if chat_id in db.active_games:
@@ -310,9 +318,9 @@ async def process_seeker_guess(callback: types.CallbackQuery):
             if game.attempts <= 0:
                 await bot.send_message(
                     chat_id, 
-                    f"💀 <b>خسر الباحث!</b>\n🏆 المختبئون فازوا!"
+                    f"💀 <b>خسر الباحث!</b>\n🏆 المختبئون فازوا بمكرهم!"
                 )
-                await callback.message.edit_text("❌ <b>انتهت محاولاتك!</b>\n😔 لقد خسرت.")
+                await callback.message.edit_text("❌ <b>انتهت محاولاتك!</b>\n😔 لقد خسرت المطاردة.")
                 if chat_id in db.active_games:
                     del db.active_games[chat_id]
             else:
@@ -322,14 +330,15 @@ async def process_seeker_guess(callback: types.CallbackQuery):
                 )
                 await send_seeker_menu_private(callback.from_user.id, chat_id)
     except Exception as e:
-        logging.error(f"Error in process_seeker_guess: {e}")
+        print(f"Error in process_seeker_guess: {e}")
+        await callback.answer("❌ حدث خطأ!", show_alert=True)
 
 if __name__ == '__main__':
     print(f"--- {BOT_NAME} IS RUNNING ---")
     print("✅ البوت يعمل بشكل طبيعي")
     print("📝 الأوامر المتاحة: /start, /start_hide, /help")
-    print("💡 تأكد من:")
-    print("   1. وضع التوكن الصحيح")
-    print("   2. إضافة البوت إلى مجموعة")
-    print("   3. البوت لديه صلاحيات إرسال الرسائل")
+    print("💡 ملاحظات مهمة:")
+    print("   • تأكد من وضع التوكن الصحيح")
+    print("   • البوت يجب أن يكون مضافاً للمجموعة")
+    print("   • يمكنك الآن استخدام /start_hide في المجموعة")
     executor.start_polling(dp, skip_updates=True)
