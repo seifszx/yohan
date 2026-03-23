@@ -174,70 +174,7 @@ def build_hunting_text(game: dict) -> str:
         f"⚡ يُقصى لاعب كل **{interval} ثوانٍ**"
     )
 
-# ══════════════════════════════════════════════
-#         لوحة تحكم الأدمن بالأزرار
-# ══════════════════════════════════════════════
-def admin_panel_keyboard(game_id: int = None, has_game: bool = False) -> InlineKeyboardMarkup:
-    if not has_game:
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎮 بدء جولة (60 ث)",  callback_data="panel_start_60"),
-             InlineKeyboardButton("⚡ بدء سريع (30 ث)", callback_data="panel_start_30")],
-            [InlineKeyboardButton("📊 الإحصائيات",       callback_data="panel_stats"),
-             InlineKeyboardButton("📜 السجل",            callback_data="panel_history")],
-            [InlineKeyboardButton("🏆 لوحة الصدارة",     callback_data="panel_leaderboard")],
-        ])
-    else:
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 اللاعبون",          callback_data=f"panel_players_{game_id}"),
-             InlineKeyboardButton("🖼 صور اللاعبين",     callback_data=f"panel_photos_{game_id}")],
-            [InlineKeyboardButton("⏱ تغيير السرعة",      callback_data=f"panel_speed_{game_id}"),
-             InlineKeyboardButton("🎲 حدث مفاجئ",        callback_data=f"panel_event_{game_id}")],
-            [InlineKeyboardButton("🔗 رابط الدعوة",       callback_data=f"panel_invite_{game_id}"),
-             InlineKeyboardButton("🛡 حماية لاعب",       callback_data=f"panel_protect_{game_id}")],
-            [InlineKeyboardButton("❌ إنهاء اللعبة",      callback_data=f"endconfirm_{game_id}")],
-        ])
 
-# ══════════════════════════════════════════════
-#         /panel — لوحة تحكم الأدمن
-# ══════════════════════════════════════════════
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    user = update.effective_user
-
-    if chat.type == 'private':
-        await update.message.reply_text(f"❌ {BOT_NAME}: اللوحة تعمل في المجموعات فقط.")
-        return
-
-    if not await is_admin(chat, user.id):
-        await update.message.reply_text(f"❌ {BOT_NAME}: المشرفون فقط.")
-        return
-
-    game_id  = chat.id
-    has_game = game_id in games and games[game_id]['active']
-
-    if has_game:
-        game  = games[game_id]
-        count = len(game['players'])
-        phase_ar = {'joining': '⏳ انضمام', 'hunting': '🕵️ مطاردة'}.get(game['phase'], '')
-        text = (
-            f"🎛 **{BOT_NAME} — لوحة التحكم**\n\n"
-            f"🎮 الحالة: {phase_ar}\n"
-            f"👥 اللاعبون: **{count}**\n"
-            f"🔄 الجولة: {game.get('round_num', 0)}\n\n"
-            f"اختر إجراءً:"
-        )
-    else:
-        text = (
-            f"🎛 **{BOT_NAME} — لوحة التحكم**\n\n"
-            f"لا توجد لعبة نشطة.\n"
-            f"اختر إجراءً:"
-        )
-
-    await update.message.reply_text(
-        text,
-        reply_markup=admin_panel_keyboard(game_id, has_game),
-        parse_mode='Markdown'
-    )
 
 # ══════════════════════════════════════════════
 #    الأحداث المفاجئة — تعريفها وتنفيذها
@@ -645,17 +582,14 @@ async def start_hunter_game(game_id, context, chat_id, msg_id, players):
     await asyncio.sleep(1)
 
     # ═══ إرسال رسائل خاصة للمختبئين ═══
-    spots_pool = list(HIDING_SPOTS)
-    random.shuffle(spots_pool)
-    for i, player in enumerate(normal_players):
-        # كل لاعب يحصل على 3 أماكن مختلفة للاختيار
-        player_spots = random.sample(spots_pool, min(3, len(spots_pool)))
+    for player in normal_players:
+        player_spots = list(HIDING_SPOTS)
         hunter_games[chat_id]['hiding_spots'][player['id']] = {
-            'options':  player_spots,
-            'chosen':   None,
+            'options': player_spots,
+            'chosen':  None,
         }
         buttons = [
-            [InlineKeyboardButton(f"🏠 {spot[:30]}...", callback_data=f"hide_{chat_id}_{player['id']}_{j}")]
+            [InlineKeyboardButton(spot, callback_data=f"hide_{chat_id}_{player['id']}_{j}")]
             for j, spot in enumerate(player_spots)
         ]
         try:
@@ -664,7 +598,7 @@ async def start_hunter_game(game_id, context, chat_id, msg_id, players):
                 text=(
                     f"🫣 **{BOT_NAME} — اختر مكان اختبائك!**\n\n"
                     f"🔴 المطارد هو: **{hunter['first_name']}**\n\n"
-                    f"اختر أحد الأماكن التالية للاختباء فيه:\n"
+                    f"اختر أحد الأماكن للاختباء فيه:\n"
                     f"_(اختر بسرعة قبل أن يجدك!)_ 🏃"
                 ),
                 reply_markup=InlineKeyboardMarkup(buttons),
@@ -1116,8 +1050,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # إعادة تعيين الأماكن للجولة الجديدة
                 for pid in hg['hiding_spots']:
                     hg['hiding_spots'][pid]['chosen'] = None
-                    new_spots = random.sample(HIDING_SPOTS, min(3, len(HIDING_SPOTS)))
-                    hg['hiding_spots'][pid]['options'] = new_spots
+                    hg['hiding_spots'][pid]['options'] = list(HIDING_SPOTS)
 
                 try:
                     await context.bot.send_message(
@@ -1135,10 +1068,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 # إرسال أماكن جديدة للمختبئين
                 for player in hg['players']:
-                    spot_data_new = hg['hiding_spots'][player['id']]
-                    player_spots = spot_data_new['options']
+                    player_spots = list(HIDING_SPOTS)
                     buttons = [
-                        [InlineKeyboardButton(f"🏠 {spot[:30]}...", callback_data=f"hide_{hg_chat_id}_{player['id']}_{j}")]
+                        [InlineKeyboardButton(spot, callback_data=f"hide_{hg_chat_id}_{player['id']}_{j}")]
                         for j, spot in enumerate(player_spots)
                     ]
                     try:
@@ -1322,289 +1254,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ══ لوحة التحكم — بدء جولة ══
-    if data.startswith("panel_start_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            join_time = int(data.replace("panel_start_", ""))
-        except:
-            join_time = 60
-
-        if chat_id in games and games[chat_id]['active']:
-            await query.answer("⚠️ توجد لعبة نشطة بالفعل!", show_alert=True)
-            return
-
-        await query.answer("🎮 جاري إنشاء الجولة...")
-        await query.edit_message_text(f"🎮 {BOT_NAME}: جاري إنشاء جولة جديدة...", parse_mode='Markdown')
-        await create_new_game(None, context, chat, join_time)
-        return
-
-    # ══ لوحة التحكم — إحصائيات ══
-    if data == "panel_stats":
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        total_games  = sum(s.get('games', 0) for s in stats.values())
-        total_wins   = sum(s.get('wins',  0) for s in stats.values())
-        total_players = len(stats)
-        await query.answer(
-            f"📊 إجمالي اللاعبين: {total_players}\n"
-            f"🎮 إجمالي الجولات: {total_games}\n"
-            f"🏆 إجمالي الانتصارات: {total_wins}",
-            show_alert=True
-        )
-        return
-
-    # ══ لوحة التحكم — السجل ══
-    if data == "panel_history":
-        cid = str(chat_id)
-        if cid not in history or not history[cid]:
-            await query.answer("📜 لا يوجد سجل بعد.", show_alert=True)
-            return
-        lines = [f"{i+1}. {e['winner']} | {e['players']} لاعب" for i, e in enumerate(history[cid][:5])]
-        await query.answer("📜 آخر الجولات:\n\n" + "\n".join(lines), show_alert=True)
-        return
-
-    # ══ لوحة التحكم — لوحة الصدارة ══
-    if data == "panel_leaderboard":
-        top = sorted(
-            [(uid, s) for uid, s in stats.items() if s.get('wins', 0) > 0],
-            key=lambda x: x[1]['wins'], reverse=True
-        )[:5]
-        if not top:
-            await query.answer("🏆 لم يفز أحد بعد!", show_alert=True)
-            return
-        lines = [f"{i+1}. {s.get('name','؟')} — {s['wins']} انتصار" for i, (uid, s) in enumerate(top)]
-        await query.answer("🏆 أفضل 5 لاعبين:\n\n" + "\n".join(lines), show_alert=True)
-        return
-
-    # ══ لوحة التحكم — اللاعبون ══
-    if data.startswith("panel_players_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_players_", ""))
-        except:
-            return
-        if game_id not in games:
-            await query.answer("❌ لا توجد لعبة.", show_alert=True)
-            return
-        players = games[game_id]['players']
-        if not players:
-            await query.answer("لا يوجد لاعبون بعد!", show_alert=True)
-            return
-        names = "\n".join([f"{i+1}. {p['first_name']}" for i, p in enumerate(players)])
-        await query.answer(f"👥 اللاعبون ({len(players)}):\n\n{names}", show_alert=True)
-        return
-
-    # ══ لوحة التحكم — صور اللاعبين ══
-    if data.startswith("panel_photos_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_photos_", ""))
-        except:
-            return
-        if game_id not in games:
-            await query.answer("❌ لا توجد لعبة.", show_alert=True)
-            return
-
-        players = games[game_id]['players']
-        if not players:
-            await query.answer("لا يوجد لاعبون!", show_alert=True)
-            return
-
-        await query.answer("🖼 جاري جلب الصور...", show_alert=False)
-
-        # جلب صور اللاعبين وإرسالها كألبوم
-        media_group = []
-        captions    = []
-        for i, p in enumerate(players[:10]):  # حد 10 صور
-            photo_url = await get_photo_url(context.bot, p['id'])
-            if photo_url:
-                caption = f"{i+1}. {p['first_name']}"
-                media_group.append(InputMediaPhoto(media=photo_url, caption=caption))
-            else:
-                captions.append(f"{i+1}. {p['first_name']} (بدون صورة)")
-
-        if media_group:
-            try:
-                await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-            except Exception as e:
-                logger.warning(f"send photos: {e}")
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⚠️ تعذّر إرسال الصور.",
-                    parse_mode='Markdown'
-                )
-        else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🖼 {BOT_NAME}: لا يوجد لاعبون لديهم صور شخصية.",
-                parse_mode='Markdown'
-            )
-        return
-
-    # ══ لوحة التحكم — تغيير السرعة ══
-    if data.startswith("panel_speed_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_speed_", ""))
-        except:
-            return
-        if game_id not in games:
-            await query.answer("❌ لا توجد لعبة.", show_alert=True)
-            return
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("5 ث ⚡⚡", callback_data=f"speed_{game_id}_5"),
-             InlineKeyboardButton("10 ث ⚡",  callback_data=f"speed_{game_id}_10")],
-            [InlineKeyboardButton("15 ث 🐢",  callback_data=f"speed_{game_id}_15"),
-             InlineKeyboardButton("30 ث 🐌",  callback_data=f"speed_{game_id}_30")],
-        ])
-        await query.edit_message_text(
-            f"⏱ **اختر مدة الإقصاء:**",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
-        return
-
-    # ══ تطبيق السرعة المختارة ══
-    if data.startswith("speed_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        parts = data.split("_")
-        try:
-            game_id = int(parts[1])
-            val     = int(parts[2])
-        except:
-            return
-        if game_id in games:
-            games[game_id]['elim_interval'] = val
-            await query.answer(f"✅ تم تعيين الإقصاء كل {val} ثانية!", show_alert=True)
-            await query.edit_message_text(
-                f"🎛 **{BOT_NAME} — لوحة التحكم**\n\n✅ مدة الإقصاء: **{val} ثانية**",
-                reply_markup=admin_panel_keyboard(game_id, True),
-                parse_mode='Markdown'
-            )
-        return
-
-    # ══ لوحة التحكم — حدث مفاجئ ══
-    if data.startswith("panel_event_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_event_", ""))
-        except:
-            return
-        if game_id not in games or games[game_id]['phase'] != 'hunting':
-            await query.answer("❌ لا توجد مطاردة نشطة.", show_alert=True)
-            return
-
-        await query.answer("🎲 جاري تفعيل الحدث...", show_alert=False)
-        msg_id = games[game_id]['message_id']
-        await trigger_random_event(game_id, context, chat_id, msg_id)
-        return
-
-    # ══ لوحة التحكم — رابط الدعوة ══
-    if data.startswith("panel_invite_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_invite_", ""))
-        except:
-            return
-        if game_id not in games:
-            await query.answer("❌ لا توجد لعبة.", show_alert=True)
-            return
-
-        game = games[game_id]
-        invite = game.get('invite_link')
-
-        if not invite:
-            # محاولة إنشاء رابط جديد
-            try:
-                link = await context.bot.create_chat_invite_link(
-                    chat_id=game_id,
-                    name=f"دعوة {BOT_NAME}"
-                )
-                invite = link.invite_link
-                game['invite_link'] = invite
-            except:
-                await query.answer("❌ تعذّر إنشاء رابط الدعوة.\n(البوت يحتاج صلاحية إنشاء الروابط)", show_alert=True)
-                return
-
-        # إرسال الرابط في المجموعة
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"🔗 **{BOT_NAME} — رابط دعوة الجولة**\n\n"
-                f"شارك هذا الرابط مع أصدقائك للانضمام للمجموعة:\n"
-                f"{invite}\n\n"
-                f"_ثم اضغط زر الانضمام في رسالة اللعبة!_"
-            ),
-            parse_mode='Markdown'
-        )
-        await query.answer("✅ تم إرسال الرابط في المجموعة!", show_alert=True)
-        return
-
-    # ══ لوحة التحكم — حماية لاعب ══
-    if data.startswith("panel_protect_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        try:
-            game_id = int(data.replace("panel_protect_", ""))
-        except:
-            return
-        if game_id not in games or not games[game_id]['players']:
-            await query.answer("❌ لا يوجد لاعبون.", show_alert=True)
-            return
-
-        players = games[game_id]['players']
-        buttons = [
-            [InlineKeyboardButton(p['first_name'], callback_data=f"doprotect_{game_id}_{p['id']}")]
-            for p in players
-        ]
-        await query.edit_message_text(
-            f"🛡 **اختر اللاعب الذي تريد حمايته:**",
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode='Markdown'
-        )
-        return
-
-    # ══ تطبيق الحماية ══
-    if data.startswith("doprotect_"):
-        if not await is_admin(chat, user.id):
-            await query.answer("❌ المشرفون فقط!", show_alert=True)
-            return
-        parts = data.split("_")
-        try:
-            game_id    = int(parts[1])
-            protect_id = int(parts[2])
-        except:
-            return
-        if game_id in games:
-            games[game_id].setdefault('vip_players', []).append(protect_id)
-            p = next((x for x in games[game_id]['players'] if x['id'] == protect_id), None)
-            name = p['first_name'] if p else "اللاعب"
-            await query.answer(f"🛡 {name} محمي في الجولة القادمة!", show_alert=True)
-            await query.edit_message_text(
-                f"🎛 **{BOT_NAME} — لوحة التحكم**\n\n🛡 {name} محمي!",
-                reply_markup=admin_panel_keyboard(game_id, True),
-                parse_mode='Markdown'
-            )
-        return
-
     # ══ إنهاء اللعبة ══
     await query.answer()
 
@@ -1769,138 +1418,4 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cid = str(update.effective_chat.id)
-    if cid not in history or not history[cid]:
-        await update.message.reply_text(f"📜 {BOT_NAME}: لا يوجد سجل بعد.")
-        return
-    lines = [f"{i+1}. 🏆 **{e['winner']}** | {e['players']} لاعب | {e['date']}"
-             for i, e in enumerate(history[cid])]
-    await update.message.reply_text(
-        f"📜 **{BOT_NAME} — آخر الجولات**\n\n" + "\n".join(lines),
-        parse_mode='Markdown'
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"🤖 **{BOT_NAME} — لعبة الغميضة**\n\n"
-        f"━━━ **أوامر اللعبة** ━━━\n"
-        f"/start — بدء جولة جديدة _(أدمن)_\n"
-        f"/panel — لوحة تحكم الأدمن 🎛\n"
-        f"/end — إنهاء الجولة _(أدمن)_\n"
-        f"/status — حالة اللعبة\n\n"
-        f"━━━ **إعدادات** _(أدمن)_ ━━━\n"
-        f"/setinterval 15 — تغيير مدة الإقصاء\n"
-        f"/kick @username — طرد لاعب\n"
-        f"/protect @username — حماية لاعب\n\n"
-        f"━━━ **الإحصائيات** ━━━\n"
-        f"/mystats — إحصائياتك\n"
-        f"/leaderboard — لوحة الصدارة\n"
-        f"/history — سجل الجولات\n\n"
-        f"━━━ **مميزات جديدة** ━━━\n"
-        f"🎛 /panel — لوحة تحكم كاملة بالأزرار\n"
-        f"🎲 أحداث مفاجئة تلقائية أثناء اللعبة\n"
-        f"🖼 عرض صور اللاعبين من اللوحة\n"
-        f"🔗 رابط دعوة مباشر للجولة",
-        parse_mode='Markdown'
-    )
-
-async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"🏓 {BOT_NAME}: Pong! ✅")
-
-
-# ══════════════════════════════════════════════
-#   معالج الرسائل النصية — "يوهان بدأ لعبة"
-# ══════════════════════════════════════════════
-MEMBER_START_TRIGGERS = ["يوهان بدأ لعبة", "يوهان ابدا لعبة", "يوهان بدأ", "yohan start"]
-ADMIN_ALLOW_TRIGGER   = "يوهان بدأ اعضاء"
-ADMIN_BLOCK_TRIGGER   = "يوهان اغلاق بدأ اعضاء"
-
-async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    user = update.effective_user
-    msg  = update.message
-
-    if not msg or not msg.text:
-        return
-    if chat.type == 'private':
-        return
-
-    text     = msg.text.strip().lower()
-    text_raw = msg.text.strip()
-    game_id  = chat.id
-    admin    = await is_admin(chat, user.id)
-
-    # ── الأدمن يفعّل/يوقف بدء الأعضاء ──
-    if admin:
-        if ADMIN_ALLOW_TRIGGER in text_raw:
-            member_start_allowed[game_id] = True
-            await msg.reply_text(
-                f"✅ **{BOT_NAME}**: تم تفعيل بدء اللعبة للأعضاء!\n"
-                f"الآن يمكن لأي عضو بدء لعبة بكتابة: **يوهان بدأ لعبة**",
-                parse_mode='Markdown'
-            )
-            return
-
-        if ADMIN_BLOCK_TRIGGER in text_raw:
-            member_start_allowed[game_id] = False
-            await msg.reply_text(
-                f"🔒 **{BOT_NAME}**: تم إيقاف بدء اللعبة للأعضاء.\n"
-                f"الآن فقط المشرفون يمكنهم البدء.",
-                parse_mode='Markdown'
-            )
-            return
-
-    # ── بدء لعبة بالنص ──
-    triggered = any(t in text for t in MEMBER_START_TRIGGERS)
-    if not triggered:
-        return
-
-    # هل مسموح للأعضاء؟
-    if not admin and not member_start_allowed.get(game_id, False):
-        await msg.reply_text(
-            f"🔒 **{BOT_NAME}**: بدء اللعبة للمشرفين فقط.\n"
-            f"_(المشرف يستطيع تفعيل بدء الأعضاء بقول: يوهان بدأ اعضاء)_",
-            parse_mode='Markdown'
-        )
-        return
-
-    # هل توجد لعبة نشطة؟
-    if game_id in games and games[game_id]['active']:
-        await msg.reply_text(f"⚠️ **{BOT_NAME}**: توجد لعبة نشطة بالفعل!", parse_mode='Markdown')
-        return
-
-    await create_new_game(update, context, chat, DEFAULT_JOIN_TIME)
-
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Error: {context.error}", exc_info=context.error)
-
-# ══════════════════════════════════════════════
-#                    main
-# ══════════════════════════════════════════════
-def main():
-    load_data()
-
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start",       start_command))
-    app.add_handler(CommandHandler("panel",       admin_panel))
-    app.add_handler(CommandHandler("end",         end_game))
-    app.add_handler(CommandHandler("status",      status_command))
-    app.add_handler(CommandHandler("setinterval", set_interval))
-    app.add_handler(CommandHandler("kick",        kick_player))
-    app.add_handler(CommandHandler("protect",     protect_player))
-    app.add_handler(CommandHandler("mystats",     my_stats))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CommandHandler("history",     history_command))
-    app.add_handler(CommandHandler("help",        help_command))
-    app.add_handler(CommandHandler("ping",        ping))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    app.add_error_handler(error_handler)
-
-    print(f"🤖 {BOT_NAME} (@{BOT_USERNAME}) يعمل...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main()
+async def hi
