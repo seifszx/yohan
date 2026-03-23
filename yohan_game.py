@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN        = "8779896667:AAEwivan1ZXUI_Y5qt5eoBiu1uW7lCTN6B8"
+TOKEN        = "8779896667:AAEB7bTIZ_EUVR3gyrgegKWHhxjKM0JftQU"
 BOT_USERNAME = "GSKFNBOT"
 BOT_NAME     = "𝗬𝗢𝗛𝗔𝗡"
 
