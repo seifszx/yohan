@@ -2,10 +2,7 @@ import logging
 import random
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    ContextTypes
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,30 +16,27 @@ HIDING_SPOTS = [
     "🌾 حقل القمح", "🏠 المنزل المسكون", "🚉 محطة القطار", "🌊 الشاطئ الخفي",
 ]
 
-GAME_DURATION = 180  # 3 دقائق
+GAME_DURATION = 180
 games = {}
 
 def players_text(players):
     names = "\n".join([f"• {p['name']}" for p in players.values()]) if players else "—"
     return f"🕵️ *𝗬𝗢𝗛𝗔𝗡 - لعبة الغموضية!*\n\n👥 *#players: {len(players)}*\n{names}"
 
-def join_keyboard(chat_id):
+def join_kb(chat_id):
     return InlineKeyboardMarkup([[InlineKeyboardButton("✋ الانضمام للعبة", callback_data=f"join_{chat_id}")]])
 
-# ── /start ──
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     await update.message.reply_text(
-        "🕵️ *أهلاً في 𝗬𝗢𝗛𝗔𝗡!*\n\nبوت لعبة الغموضية الجماعية!\n\n"
-        "📌 أضف البوت لمجموعتك ثم اكتب /newgame",
+        "🕵️ *أهلاً في 𝗬𝗢𝗛𝗔𝗡!*\n\nبوت لعبة الغموضية!\nأضف البوت لمجموعتك ثم اكتب /newgame",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("➕ إضافة يوهان للمجموعة", url=f"https://t.me/{BOT_USERNAME}?startgroup=start")
+            InlineKeyboardButton("➕ إضافة يوهان", url=f"https://t.me/{BOT_USERNAME}?startgroup=start")
         ]])
     )
 
-# ── /newgame ──
 async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -56,8 +50,8 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ للمسؤولين فقط!")
         return
 
-    if chat.id in games and games[chat.id]["phase"] == "playing":
-        await update.message.reply_text("⚠️ يوجد لعبة جارية!")
+    if chat.id in games:
+        await update.message.reply_text("⚠️ يوجد لعبة جارية! استخدم /endgame أولاً")
         return
 
     games[chat.id] = {
@@ -66,59 +60,57 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "hunter_id": None,
         "join_message_id": None,
         "hunter_mistakes": 0,
-        "chat_id": chat.id,
+        "running": True,
     }
 
     msg = await context.bot.send_message(
         chat_id=chat.id,
         text=players_text({}),
         parse_mode="Markdown",
-        reply_markup=join_keyboard(chat.id)
+        reply_markup=join_kb(chat.id)
     )
     games[chat.id]["join_message_id"] = msg.message_id
 
-    asyncio.create_task(game_timer(chat.id, context.bot))
+    asyncio.create_task(game_loop(chat.id, context.bot))
 
-# ── العداد الرئيسي ──
-async def game_timer(chat_id: int, bot):
-    # أرسل رسالة كل 40 ثانية (4 مرات = 160 ثانية)
-    checkpoints = [40, 80, 120, 160]
-    
-    for elapsed in checkpoints:
+async def game_loop(chat_id, bot):
+    game = games.get(chat_id)
+    if not game:
+        return
+
+    # ── رسائل العداد كل 40 ثانية ──
+    for remaining in [140, 100, 60, 20]:
         await asyncio.sleep(40)
-        
-        if chat_id not in games or games[chat_id]["phase"] != "joining":
+        game = games.get(chat_id)
+        if not game or not game["running"] or game["phase"] != "joining":
             return
-        
-        remaining = GAME_DURATION - elapsed
-        count = len(games[chat_id]["players"])
-        
+
+        count = len(game["players"])
         await bot.send_message(
             chat_id=chat_id,
             text=f"⏳ *بقي {remaining} ثانية حتى بداية اللعبة!*\n"
                  f"👥 المشاركون: *{count}*\n\n👇 اضغط للانضمام",
             parse_mode="Markdown",
-            reply_markup=join_keyboard(chat_id)
+            reply_markup=join_kb(chat_id)
         )
 
-    # انتهى الوقت - بقي 20 ثانية تحضيرية
-    await asyncio.sleep(20)
-    if chat_id not in games or games[chat_id]["phase"] != "joining":
+    # ── انتهى وقت التسجيل ──
+    game = games.get(chat_id)
+    if not game or not game["running"]:
         return
 
-    game = games[chat_id]
     players = game["players"]
 
     if len(players) < 3:
         await bot.send_message(
             chat_id=chat_id,
-            text="❌ *انتهى وقت التسجيل!*\nيحتاج 3 لاعبين على الأقل.\nاستخدم /newgame للبدء من جديد.",
+            text="❌ *انتهى وقت التسجيل!*\nيحتاج 3 لاعبين على الأقل.",
             parse_mode="Markdown"
         )
         games.pop(chat_id, None)
         return
 
-    # اختر المطارد
+    # ── اختر المطارد ──
     pids = list(players.keys())
     hunter_id = random.choice(pids)
     game["hunter_id"] = hunter_id
@@ -126,12 +118,11 @@ async def game_timer(chat_id: int, bot):
 
     for pid in pids:
         players[pid].update({
-            "alive": True,
-            "location": None,
+            "alive": True, "location": None,
             "role": "hunter" if pid == hunter_id else "hider"
         })
 
-    # أخبر المطارد "انتظر حتى يختبأ الآخرون"
+    # ── أخبر المطارد بالانتظار ──
     try:
         await bot.send_message(
             chat_id=hunter_id,
@@ -139,55 +130,52 @@ async def game_timer(chat_id: int, bot):
             parse_mode="Markdown"
         )
     except Exception as e:
-        logger.error(f"Hunter msg error: {e}")
+        logger.error(f"Hunter notify error: {e}")
 
-    # أرسل للمختبئين أماكن الاختباء - لديهم 30 ثانية
-    hider_tasks = []
+    # ── أرسل للمختبئين أماكن الاختباء ──
     for pid in pids:
         if players[pid]["role"] == "hider":
-            hider_tasks.append(send_hider_menu_with_bot(bot, chat_id, pid))
-    
-    await asyncio.gather(*hider_tasks, return_exceptions=True)
+            try:
+                spots = random.sample(HIDING_SPOTS, 5)
+                kb = [[InlineKeyboardButton(s, callback_data=f"hide_{chat_id}_{s}")] for s in spots]
+                await bot.send_message(
+                    chat_id=pid,
+                    text="🙈 *أنت مختبئ!*\n\n⏰ لديك 30 ثانية للاختباء!\nاختر مكانك:",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(kb)
+                )
+            except Exception as e:
+                logger.error(f"Hider notify error {pid}: {e}")
 
-    # انتظر 30 ثانية للاختباء
+    # ── انتظر 30 ثانية للاختباء ──
     await asyncio.sleep(30)
 
-    if chat_id not in games:
+    game = games.get(chat_id)
+    if not game or not game["running"]:
         return
 
     game["phase"] = "playing"
 
-    # أعلن بدء اللعبة في المجموعة
+    # ── أعلن في المجموعة ──
     hunter_name = players[hunter_id]["name"]
-    hiders_names = "\n".join([f"• {players[p]['name']}" for p in pids if p != hunter_id])
-    
+    hiders_text = "\n".join([f"• {players[p]['name']}" for p in pids if p != hunter_id])
+
     await bot.send_message(
         chat_id=chat_id,
         text=f"🎮 *بدأت اللعبة!*\n\n"
              f"🕵️ *المطارد:* {hunter_name}\n\n"
-             f"🙈 *المختبئون:*\n{hiders_names}\n\n"
-             f"المطارد يبدأ الآن!",
+             f"🙈 *المختبئون:*\n{hiders_text}\n\n"
+             f"🏁 المطارد يبدأ الآن!",
         parse_mode="Markdown"
     )
 
-    # أرسل قائمة المطارد
+    # ── أرسل قائمة المطارد ──
     try:
-        await send_hunter_menu_with_bot(bot, chat_id, hunter_id)
+        await send_hunter_menu(bot, chat_id, hunter_id)
     except Exception as e:
         logger.error(f"Hunter menu error: {e}")
 
-async def send_hider_menu_with_bot(bot, chat_id, hider_id, is_change=False):
-    spots = random.sample(HIDING_SPOTS, 5)
-    kb = [[InlineKeyboardButton(s, callback_data=f"hide_{chat_id}_{s}")] for s in spots]
-    txt = ("⚠️ *غيّر مكانك بسرعة!*\n\nلديك 30 ثانية!\nاختر مكان اختبائك:" 
-           if is_change else 
-           "🙈 *أنت مختبئ!*\n\n⏰ لديك 30 ثانية للاختباء!\nاختر مكانك:")
-    await bot.send_message(
-        chat_id=hider_id, text=txt,
-        parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)
-    )
-
-async def send_hunter_menu_with_bot(bot, chat_id, hunter_id):
+async def send_hunter_menu(bot, chat_id, hunter_id):
     if chat_id not in games:
         return
     game = games[chat_id]
@@ -202,7 +190,6 @@ async def send_hunter_menu_with_bot(bot, chat_id, hunter_id):
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
-# ── معالج الأزرار ──
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user = q.from_user
@@ -212,25 +199,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── انضمام ──
     if data.startswith("join_"):
         chat_id = int(data.split("_")[1])
-
         if chat_id not in games:
-            await q.answer("❌ لا توجد لعبة نشطة!", show_alert=True)
+            await q.answer("❌ لا توجد لعبة!", show_alert=True)
             return
-
         game = games[chat_id]
-
         if game["phase"] != "joining":
             await q.answer("❌ انتهى وقت التسجيل!", show_alert=True)
             return
-
         if user.id in game["players"]:
             await q.answer("✅ أنت مسجل بالفعل!", show_alert=True)
             return
 
-        game["players"][user.id] = {
-            "name": user.first_name,
-            "role": None, "location": None, "alive": True,
-        }
+        game["players"][user.id] = {"name": user.first_name, "role": None, "location": None, "alive": True}
 
         try:
             await context.bot.send_message(
@@ -240,33 +220,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             game["players"].pop(user.id, None)
-            await q.answer("⚠️ ابدأ محادثة مع البوت أولاً @GSKFNBOT", show_alert=True)
+            await q.answer("⚠️ ابدأ محادثة مع البوت @GSKFNBOT أولاً!", show_alert=True)
             return
 
-        # حدّث رسالة المجموعة فوراً
         try:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=game["join_message_id"],
                 text=players_text(game["players"]),
                 parse_mode="Markdown",
-                reply_markup=join_keyboard(chat_id)
+                reply_markup=join_kb(chat_id)
             )
         except Exception as e:
             logger.error(f"Edit error: {e}")
 
-    # ── المطارد يختار ──
+    # ── مطارد يختار ──
     elif data.startswith("hunt_"):
         parts = data.split("_")
         chat_id, target_id = int(parts[1]), int(parts[2])
-
         if chat_id not in games: return
         game = games[chat_id]
-
         if user.id != game["hunter_id"]:
             await q.answer("❌ لست المطارد!", show_alert=True)
             return
-
         target = game["players"].get(target_id)
         if not target or not target["alive"]:
             await q.answer("❌ غير متاح!", show_alert=True)
@@ -291,11 +267,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id, "🏆 *انتهت اللعبة! المطارد فاز!* 🕵️", parse_mode="Markdown")
                 games.pop(chat_id, None)
             else:
-                await send_hunter_menu_with_bot(context.bot, chat_id, user.id)
+                await send_hunter_menu(context.bot, chat_id, user.id)
         else:
             game["hunter_mistakes"] += 1
             m = game["hunter_mistakes"]
-
             if m >= 3:
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -313,31 +288,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             try:
                 await context.bot.send_message(target_id, "⚠️ *المطارد يبحث عنك! غيّر مكانك!*", parse_mode="Markdown")
-                await send_hider_menu_with_bot(context.bot, chat_id, target_id, is_change=True)
+                spots = random.sample(HIDING_SPOTS, 5)
+                kb = [[InlineKeyboardButton(s, callback_data=f"hide_{chat_id}_{s}")] for s in spots]
+                await context.bot.send_message(
+                    target_id, "⚠️ *غيّر مكانك بسرعة!*\nاختر مكان اختبائك:",
+                    parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)
+                )
             except: pass
 
-            asyncio.create_task(wait_resend_hunter(chat_id, user.id, context.bot))
+            asyncio.create_task(wait_hunter(chat_id, user.id, context.bot))
 
-    # ── المختبئ يختار مكان ──
+    # ── مختبئ يختار مكان ──
     elif data.startswith("hide_"):
         parts = data.split("_", 2)
         chat_id, spot = int(parts[1]), parts[2]
-
         if chat_id not in games: return
         game = games[chat_id]
         if user.id not in game["players"]: return
         if game["players"][user.id]["role"] != "hider": return
-
         old = game["players"][user.id]["location"]
         game["players"][user.id]["location"] = spot
         txt = f"✅ *غيّرت مكانك إلى:* {spot} 🙈" if old else f"✅ *اخترت الاختباء في:* {spot} 🙈"
         await q.edit_message_text(txt, parse_mode="Markdown")
 
-async def wait_resend_hunter(chat_id, hunter_id, bot):
+async def wait_hunter(chat_id, hunter_id, bot):
     await asyncio.sleep(60)
     if chat_id not in games: return
-    await bot.send_message(chat_id=hunter_id, text="⏰ *انتهى وقت الانتظار! حاول مجدداً:*", parse_mode="Markdown")
-    await send_hunter_menu_with_bot(bot, chat_id, hunter_id)
+    await bot.send_message(chat_id=hunter_id, text="⏰ *انتظر انتهى! حاول مجدداً:*", parse_mode="Markdown")
+    await send_hunter_menu(bot, chat_id, hunter_id)
 
 async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -350,6 +328,7 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.id not in games:
         await update.message.reply_text("❌ لا توجد لعبة!")
         return
+    games[chat.id]["running"] = False
     games.pop(chat.id, None)
     await update.message.reply_text("🛑 *تم إنهاء اللعبة!*", parse_mode="Markdown")
 
@@ -360,7 +339,7 @@ def main():
     app.add_handler(CommandHandler("endgame", end_game))
     app.add_handler(CallbackQueryHandler(button_handler))
     print("🕵️ بوت YOHAN يعمل...", flush=True)
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
