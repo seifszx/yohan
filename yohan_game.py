@@ -7,7 +7,7 @@ from aiogram.utils import executor
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- الإعدادات ---
-API_TOKEN = '8779896667:AAG2cKf_clrlmiOnsgiIaaANIbu_d8D04jo'
+API_TOKEN = '8779896667:AAEHzGz-uGdqSx2ZDhkbAV4GSgv8_gnl-ZQ'
 BOT_NAME = "𝗬𝗢𝗛𝗔𝗡"
 
 logging.basicConfig(level=logging.INFO)
